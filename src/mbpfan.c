@@ -6,6 +6,8 @@
  *  Modifications (2012-present) by Daniel Graziotin <daniel@ineed.coffee> [CURRENT MAINTAINER]
  *  Modifications (2017-present) by Robert Musial <rmusial@fastmail.com>
  *  Modifications (2018-present) by Ati Sharma <ati.sharma@gmail.com>
+ *  Modifications (2026-10-08) by Charles Menser <charles.menser@gmail.com>:
+ *  applesmc hwmon ABI (fanN_target / pwmN_enable). Still GPL-3.0-or-later.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -271,6 +273,36 @@ static void trim_trailing_whitespace(char *str)
     }
 }
 
+/*
+ * Newer applesmc drivers register their attributes through the standard hwmon
+ * ABI instead of on the platform device: fan<N>_target replaces fan<N>_output,
+ * and pwm<N>_enable (1 = manual, 2 = automatic) replaces fan<N>_manual (1/0).
+ * Those files live in <applesmc device>/hwmon/hwmon<M>/, not in the device dir.
+ * Returns that directory, or NULL if the device has none.
+ */
+static char *find_applesmc_hwmon_dir()
+{
+    char *hwmon_parent = smprintf("%s/hwmon", applesmc_path);
+    DIR *dir = opendir(hwmon_parent);
+    char *hwmon_dir = NULL;
+
+    if (dir != NULL) {
+        struct dirent *ent;
+
+        while ((ent = readdir(dir)) != NULL) {
+            if (strncmp(ent->d_name, "hwmon", 5) == 0) {
+                hwmon_dir = smprintf("%s/%s", hwmon_parent, ent->d_name);
+                break;
+            }
+        }
+
+        closedir(dir);
+    }
+
+    free(hwmon_parent);
+    return hwmon_dir;
+}
+
 t_fans *retrieve_fans()
 {
     t_fans *fans_head = NULL;
@@ -292,6 +324,8 @@ t_fans *retrieve_fans()
     int counter = 0;
     int fans_found = 0;
 
+    char *hwmon_dir = find_applesmc_hwmon_dir();
+
     for (counter = 0; counter < NUM_FANS; counter++) {
 
         path_output = smprintf("%s%d%s", path_begin, counter, path_output_end);
@@ -301,11 +335,30 @@ t_fans *retrieve_fans()
         path_fan_max = smprintf("%s%d%s", path_begin, counter, path_max_speed);
 
         FILE *file = fopen(path_output, "w");
+        int manual_on = 1;
+        int manual_off = 0;
+
+        if (file == NULL && hwmon_dir != NULL) {
+            free(path_output);
+            free(path_label);
+            free(path_manual);
+            free(path_fan_min);
+            free(path_fan_max);
+            path_output = smprintf("%s/fan%d_target", hwmon_dir, counter);
+            path_label = smprintf("%s/fan%d%s", hwmon_dir, counter, path_label_end);
+            path_manual = smprintf("%s/pwm%d_enable", hwmon_dir, counter);
+            path_fan_min = smprintf("%s/fan%d%s", hwmon_dir, counter, path_min_speed);
+            path_fan_max = smprintf("%s/fan%d%s", hwmon_dir, counter, path_max_speed);
+            manual_off = 2;
+            file = fopen(path_output, "w");
+        }
 
         if (file != NULL) {
             fan = (t_fans *)malloc(sizeof(t_fans));
             fan->fan_output_path = strdup(path_output);
             fan->fan_manual_path = strdup(path_manual);
+            fan->fan_manual_on = manual_on;
+            fan->fan_manual_off = manual_off;
             fan->fan_id = counter;
 
             int fan_speed = read_value(path_fan_min);
@@ -357,6 +410,8 @@ t_fans *retrieve_fans()
         path_manual = NULL;
     }
 
+    free(hwmon_dir);
+
     if (verbose) {
         mbp_log(LOG_INFO, "Found %d fans", fans_found);
     }
@@ -369,7 +424,7 @@ t_fans *retrieve_fans()
     return fans_head;
 }
 
-static void set_fans_mode(t_fans *fans, int mode)
+static void set_fans_mode(t_fans *fans, bool manual)
 {
     t_fans *tmp = fans;
     FILE *file;
@@ -378,7 +433,7 @@ static void set_fans_mode(t_fans *fans, int mode)
         file = fopen(tmp->fan_manual_path, "rw+");
 
         if (file != NULL) {
-            fprintf(file, "%d", mode);
+            fprintf(file, "%d", manual ? tmp->fan_manual_on : tmp->fan_manual_off);
             fclose(file);
         }
 
@@ -389,13 +444,13 @@ static void set_fans_mode(t_fans *fans, int mode)
 void set_fans_man(t_fans *fans)
 {
 
-    set_fans_mode(fans, 1);
+    set_fans_mode(fans, true);
 }
 
 void set_fans_auto(t_fans *fans)
 {
 
-    set_fans_mode(fans, 0);
+    set_fans_mode(fans, false);
 }
 
 t_sensors *refresh_sensors(t_sensors *sensors)

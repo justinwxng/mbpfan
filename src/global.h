@@ -23,6 +23,9 @@ struct s_fans {
     char *label;
     char *fan_output_path;
     char *fan_manual_path;
+    /* Added 2026-10-08 by Charles Menser. GPL-3.0-or-later, same as mbpfan.c. */
+    int fan_manual_on;  // value written to fan_manual_path to take control
+    int fan_manual_off; // value written to fan_manual_path to hand back to the SMC
     int step_up;
     int step_down;
     int fan_id;
