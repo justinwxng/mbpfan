@@ -6,6 +6,8 @@
  *  Modifications (2012-present) by Daniel Graziotin <daniel@ineed.coffee> [CURRENT MAINTAINER]
  *  Modifications (2017-present) by Robert Musial <rmusial@fastmail.com>
  *  Modifications (2018-present) by Ati Sharma <ati.sharma@gmail.com>
+ *  Modifications (2026-10-08) by Charles Menser <charles.menser@gmail.com>:
+ *  applesmc hwmon ABI (fanN_target / pwmN_enable). Still GPL-3.0-or-later.
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
